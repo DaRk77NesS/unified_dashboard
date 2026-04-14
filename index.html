@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unified IoT Dashboard</title>
+
+    <link rel="icon" href="data:,">
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/paho-mqtt@1.1.0/paho-mqtt.min.js"></script>
+
+    <style>
+        :root {
+            --font-main: 'Poppins', sans-serif;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-highlight: rgba(255, 255, 255, 0.25);
+            --glass-shadow: 0 25px 45px rgba(0, 0, 0, 0.2);
+            --text-light: #f0f0f0;
+            --text-muted: #a0aab2;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: var(--font-main);
+        }
+
+        body {
+            background-color: #0f121b;
+            color: var(--text-light);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* --- Ambient Glowing Orbs Background --- */
+        .ambient-orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(120px);
+            z-index: -1;
+            animation: float 20s infinite ease-in-out alternate;
+        }
+
+        .orb-1 {
+            top: -10%;
+            left: -10%;
+            width: 500px;
+            height: 500px;
+            background: rgba(79, 172, 254, 0.4);
+        }
+
+        .orb-2 {
+            bottom: -10%;
+            right: -10%;
+            width: 600px;
+            height: 600px;
+            background: rgba(0, 230, 118, 0.3);
+            animation-delay: -5s;
+        }
+
+        .orb-3 {
+            top: 40%;
+            left: 40%;
+            width: 400px;
+            height: 400px;
+            background: rgba(255, 77, 77, 0.2);
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            100% {
+                transform: translate(50px, 50px) scale(1.1);
+            }
+        }
+
+        /* --- View Handling --- */
+        .view {
+            display: none;
+            opacity: 0;
+            min-height: 100vh;
+            padding: 80px 20px 40px 20px;
+            animation: fadeIn 0.5s forwards;
+        }
+
+        .view.active {
+            display: block;
+        }
+
+        #landing-view {
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            padding: 20px;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        #landing-view.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* --- Landing Page --- */
+        .portal-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid var(--glass-highlight);
+            border-left: 1px solid var(--glass-highlight);
+            padding: 40px;
+            border-radius: 30px;
+            text-align: center;
+            cursor: pointer;
+            width: 100%;
+            /* Responsive Width */
+            max-width: 320px;
+            box-shadow: var(--glass-shadow);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .portal-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transform: skewX(-25deg);
+            transition: 0.5s;
+        }
+
+        .portal-card:hover {
+            transform: translateY(-10px) scale(1.02);
+            box-shadow: 0 35px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        .portal-card:hover::before {
+            left: 150%;
+        }
+
+        .portal-card i {
+            font-size: 3.5rem;
+            margin-bottom: 15px;
+            background: -webkit-linear-gradient(#4facfe, #00f2fe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .portal-card .fa-seedling {
+            background: -webkit-linear-gradient(#00e676, #1de9b6);
+            -webkit-background-clip: text;
+        }
+
+        .portal-card h2 {
+            font-size: 1.6rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        /* --- Floating Navigation (Desktop Default) --- */
+        #nav-switcher {
+            position: fixed;
+            top: 25px;
+            right: 25px;
+            z-index: 1000;
+            display: none;
+            background: rgba(15, 18, 27, 0.6);
+            backdrop-filter: blur(15px);
+            border-radius: 50px;
+            padding: 6px;
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .switch-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 20px;
+            border-radius: 40px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+
+        .switch-btn:hover {
+            color: white;
+        }
+
+        .switch-btn.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.05);
+        }
+
+        /* --- Dashboard Layout & Glass Panels --- */
+        .dashboard-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .dashboard-header h1 {
+            font-size: 2.2rem;
+            font-weight: 300;
+            margin-bottom: 5px;
+        }
+
+        .dashboard-header p {
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+
+        .span-2 {
+            grid-column: span 2;
+        }
+
+        /* Responsive class for spanning columns */
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid var(--glass-highlight);
+            border-left: 1px solid var(--glass-highlight);
+            border-radius: 24px;
+            padding: 25px;
+            box-shadow: var(--glass-shadow);
+            transition: transform 0.1s ease-out;
+            transform-style: preserve-3d;
+        }
+
+        .glass-panel h3 {
+            font-size: 1.2rem;
+            font-weight: 400;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #fff;
+        }
+
+        .glass-panel h3 i {
+            color: #4facfe;
+        }
+
+        /* --- UI Elements --- */
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 12px;
+        }
+
+        .alert-text {
+            font-size: 0.9rem;
+            margin-top: 10px;
+            opacity: 0.9;
+            font-weight: 600;
+        }
+
+        .glow-red {
+            color: #ff4d4d;
+            text-shadow: 0 0 15px rgba(255, 77, 77, 0.6);
+        }
+
+        .glow-green {
+            color: #00e676;
+            text-shadow: 0 0 15px rgba(0, 230, 118, 0.6);
+        }
+
+        .glow-blue {
+            color: #4facfe;
+            text-shadow: 0 0 15px rgba(79, 172, 254, 0.6);
+        }
+
+        .icon-spin {
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .log-box {
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        canvas {
+            width: 100% !important;
+            max-height: 250px;
+        }
+
+        /* Connection Status */
+        #conn-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            font-size: 0.85rem;
+            padding: 8px 15px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            user-select: none;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        /* ==========================================
+           RESPONSIVE MOBILE / TABLET STYLES
+           ========================================== */
+        @media (max-width: 768px) {
+
+            /* Transform top navigation into a thumb-friendly bottom app bar */
+            #nav-switcher {
+                top: auto;
+                bottom: 20px;
+                right: 50%;
+                transform: translateX(50%);
+                width: 90%;
+                max-width: 400px;
+                display: none;
+                /* Controlled by JS */
+                justify-content: space-between;
+                padding: 8px;
+            }
+
+            #nav-switcher.mobile-active {
+                display: flex;
+            }
+
+            .switch-btn {
+                flex: 1;
+                text-align: center;
+                padding: 10px 5px;
+                font-size: 0.85rem;
+            }
+
+            /* Move connection status up so it doesn't overlap the bottom nav bar */
+            #conn-status {
+                bottom: 85px;
+                right: 50%;
+                transform: translateX(50%);
+                width: max-content;
+            }
+
+            /* Adjust view padding to account for bottom navigation */
+            .view {
+                padding: 30px 15px 120px 15px;
+            }
+
+            /* Collapse 2-column wide elements to 1 column on small screens */
+            .span-2 {
+                grid-column: span 1;
+            }
+
+            /* Scale down typography */
+            .dashboard-header h1 {
+                font-size: 1.8rem;
+            }
+
+            .dashboard-header p {
+                font-size: 0.9rem;
+            }
+
+            /* Smaller glowing background orbs */
+            .orb-1 {
+                width: 300px;
+                height: 300px;
+            }
+
+            .orb-2 {
+                width: 350px;
+                height: 350px;
+            }
+
+            .orb-3 {
+                width: 250px;
+                height: 250px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-orb orb-3"></div>
+
+    <div id="conn-status"><i class="fas fa-circle" style="color: #ffb74d;"></i> Connecting...</div>
+
+    <div id="nav-switcher">
+        <button class="switch-btn" id="btn-nav-home" onclick="switchView('home')"><i class="fas fa-home"></i> Smart
+            Home</button>
+        <button class="switch-btn" id="btn-nav-irrig" onclick="switchView('irrigation')"><i class="fas fa-seedling"></i>
+            AeroField</button>
+    </div>
+
+    <div id="landing-view" class="view active">
+        <div class="portal-card" onclick="switchView('home')">
+            <i class="fas fa-shield-halved"></i>
+            <h2>Smart Home</h2>
+            <p style="opacity: 0.7; font-size: 0.9rem;">Node A Analytics</p>
+        </div>
+        <div class="portal-card" onclick="switchView('irrigation')">
+            <i class="fas fa-seedling"></i>
+            <h2>AeroField</h2>
+            <p style="opacity: 0.7; font-size: 0.9rem;">Node B Analytics</p>
+        </div>
+    </div>
+
+    <div id="home-view" class="view">
+        <div class="dashboard-header">
+            <h1>Smart Home</h1>
+            <p>Integrated Safety & Environmental Control</p>
+        </div>
+        <div class="grid-container">
+            <div class="glass-panel panel-3d span-2">
+                <h3><i class="fas fa-wind"></i> Environment Data</h3>
+                <canvas id="climateChart"></canvas>
+            </div>
+
+            <div class="glass-panel panel-3d">
+                <h3><i class="fas fa-fire-extinguisher"></i> Gas & Exhaust</h3>
+                <div class="status-indicator" style="margin-top: 20px;">
+                    <span style="color: var(--text-muted);">Gas Level (PPM)</span>
+                    <strong id="ui-gas-level" style="font-size: 1.4rem;">0</strong>
+                </div>
+                <div class="status-indicator">
+                    <span style="color: var(--text-muted);">Exhaust Fan</span>
+                    <i id="ui-fan-icon" class="fas fa-fan" style="font-size: 1.4rem; color: #555;"></i>
+                </div>
+                <p id="ui-gas-alert" class="alert-text" style="color: var(--text-muted);">Status: Normal</p>
+            </div>
+
+            <div class="glass-panel panel-3d">
+                <h3><i class="fas fa-microchip"></i> Security & Alerts</h3>
+                <div class="status-indicator" style="margin-top: 20px;">
+                    <span style="color: var(--text-muted);">Rain Sensor</span>
+                    <i id="ui-rain-icon" class="fas fa-cloud-showers-heavy" style="font-size: 1.4rem; color: #555;"></i>
+                </div>
+                <h4
+                    style="margin-top: 15px; font-size: 0.95rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 400;">
+                    Entry Log</h4>
+                <div class="log-box" id="ui-entry-log">
+                    <div style="opacity: 0.5;">System monitoring active...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="irrigation-view" class="view">
+        <div class="dashboard-header">
+            <h1>AeroField</h1>
+            <p>Precision Soil & Flood Management</p>
+        </div>
+        <div class="grid-container">
+            <div class="glass-panel panel-3d">
+                <h3><i class="fas fa-droplet"></i> Field Status</h3>
+                <div class="status-indicator" style="margin-top: 20px;">
+                    <span style="color: var(--text-muted);">Soil Moisture</span>
+                    <strong id="ui-moisture-level" style="font-size: 1.4rem;">0</strong>
+                </div>
+                <div class="status-indicator">
+                    <span style="color: var(--text-muted);">Water Pump</span>
+                    <i id="ui-pump-icon" class="fas fa-cog" style="font-size: 1.4rem; color: #555;"></i>
+                </div>
+                <div class="status-indicator">
+                    <span style="color: var(--text-muted);">Flood Monitor</span>
+                    <i id="ui-flood-icon" class="fas fa-triangle-exclamation"
+                        style="font-size: 1.4rem; color: #555;"></i>
+                </div>
+                <p id="ui-flood-alert" class="alert-text" style="color: var(--text-muted);">Status: Normal</p>
+            </div>
+
+            <div class="glass-panel panel-3d span-2">
+                <h3><i class="fas fa-chart-area"></i> Moisture Trends</h3>
+                <canvas id="moistureChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 3D TILT EFFECT (Disabled on touch devices for performance)
+        // ==========================================
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        if (!isTouchDevice) {
+            const panels = document.querySelectorAll('.panel-3d');
+            panels.forEach(panel => {
+                panel.addEventListener('mousemove', e => {
+                    const rect = panel.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    const rotateX = ((y - centerY) / centerY) * -3;
+                    const rotateY = ((x - centerX) / centerX) * 3;
+                    panel.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                });
+                panel.addEventListener('mouseleave', () => {
+                    panel.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg)`;
+                });
+            });
+        }
+
+        // ==========================================
+        // UI & NAVIGATION LOGIC
+        // ==========================================
+        function switchView(target) {
+            window.scrollTo({ top: 0, behavior: 'instant' });
+
+            document.querySelectorAll('.view').forEach(v => {
+                v.classList.remove('active');
+            });
+
+            const navSwitcher = document.getElementById('nav-switcher');
+            const btns = document.querySelectorAll('.switch-btn');
+            btns.forEach(b => b.classList.remove('active'));
+
+            if (target === 'home') {
+                document.getElementById('home-view').classList.add('active');
+                // Ensure correct display class is used depending on screen size
+                if (window.innerWidth <= 768) {
+                    navSwitcher.classList.add('mobile-active');
+                    navSwitcher.style.display = ''; // Let CSS handle it
+                } else {
+                    navSwitcher.style.display = 'flex';
+                }
+                document.getElementById('btn-nav-home').classList.add('active');
+            } else if (target === 'irrigation') {
+                document.getElementById('irrigation-view').classList.add('active');
+                if (window.innerWidth <= 768) {
+                    navSwitcher.classList.add('mobile-active');
+                    navSwitcher.style.display = '';
+                } else {
+                    navSwitcher.style.display = 'flex';
+                }
+                document.getElementById('btn-nav-irrig').classList.add('active');
+            }
+        }
+
+        // ==========================================
+        // CHART.JS SETUP
+        // ==========================================
+        Chart.defaults.color = '#a0aab2';
+        Chart.defaults.font.family = "'Poppins', sans-serif";
+        Chart.defaults.scale.grid.color = 'rgba(255, 255, 255, 0.05)';
+
+        const maxDataPoints = 15;
+        let timeLabels = Array(maxDataPoints).fill('');
+
+        const ctxClimate = document.getElementById('climateChart').getContext('2d');
+        const climateChart = new Chart(ctxClimate, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    { label: 'Temp (°C)', borderColor: '#ff4d4d', backgroundColor: 'rgba(255, 77, 77, 0.1)', data: Array(maxDataPoints).fill(null), tension: 0.4, fill: true, borderWidth: 2, pointRadius: 0 },
+                    { label: 'Humidity (%)', borderColor: '#4facfe', backgroundColor: 'rgba(79, 172, 254, 0.1)', data: Array(maxDataPoints).fill(null), tension: 0.4, fill: true, borderWidth: 2, pointRadius: 0 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, interaction: { intersect: false } }
+        });
+
+        const ctxMoisture = document.getElementById('moistureChart').getContext('2d');
+        const moistureChart = new Chart(ctxMoisture, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    { label: 'Moisture (Analog)', borderColor: '#00e676', backgroundColor: 'rgba(0, 230, 118, 0.1)', data: Array(maxDataPoints).fill(null), tension: 0.4, fill: true, stepped: true, borderWidth: 2, pointRadius: 0 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 }, interaction: { intersect: false } }
+        });
+
+        function addData(chart, datasetIndex, data) {
+            const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            chart.data.labels.push(timeNow);
+            chart.data.labels.shift();
+            chart.data.datasets[datasetIndex].data.push(data);
+            chart.data.datasets[datasetIndex].data.shift();
+            chart.update();
+        }
+
+        // ==========================================
+        // STATE LOGIC
+        // ==========================================
+        let pumpRunning = false;
+        const DRY_THRESHOLD = 750;
+        const WET_THRESHOLD = 400;
+        const GAS_THRESHOLD = 400;
+
+        function updatePumpLogic(moistureStr) {
+            const val = parseInt(moistureStr);
+            const icon = document.getElementById('ui-pump-icon');
+            if (val > DRY_THRESHOLD && !pumpRunning) pumpRunning = true;
+            else if (val < WET_THRESHOLD && pumpRunning) pumpRunning = false;
+
+            if (pumpRunning) {
+                icon.className = "fas fa-cog icon-spin glow-green";
+            } else {
+                icon.className = "fas fa-cog";
+                icon.style.color = "#555";
+            }
+        }
+
+        function updateFanLogic(gasStr) {
+            const val = parseInt(gasStr);
+            const icon = document.getElementById('ui-fan-icon');
+            const alertText = document.getElementById('ui-gas-alert');
+
+            if (val > GAS_THRESHOLD) {
+                icon.className = "fas fa-fan icon-spin glow-red";
+                alertText.innerHTML = "<span class='glow-red'>WARNING: High Gas!</span>";
+            } else {
+                icon.className = "fas fa-fan";
+                icon.style.color = "#555";
+                alertText.innerHTML = "<span style='color: var(--text-muted)'>Status: Normal</span>";
+            }
+        }
+
+        function addLogEntry(message) {
+            const logBox = document.getElementById('ui-entry-log');
+            const timeNow = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.style.marginBottom = "5px";
+            div.innerHTML = `<span style="color:#4facfe">[${timeNow}]</span> ${message}`;
+            logBox.prepend(div);
+        }
+
+        // ==========================================
+        // HIDDEN MOCK DATA LOGIC
+        // ==========================================
+        let clickCount = 0;
+        let mockDataTimer = null;
+
+        const connStatusEl = document.getElementById('conn-status');
+        connStatusEl.addEventListener('click', () => {
+            clickCount++;
+
+            if (clickCount === 3) {
+                if (!mockDataTimer) {
+                    generateMockData();
+                    mockDataTimer = setInterval(generateMockData, 3000);
+                }
+            }
+
+            setTimeout(() => { clickCount = 0; }, 1500);
+        });
+
+        function generateMockData() {
+            onMessageArrived({ isMock: true, destinationName: "yareugae_proj/home/env/temp", payloadString: (30 + (Math.random() * 2 - 1)).toFixed(1) });
+            onMessageArrived({ isMock: true, destinationName: "yareugae_proj/home/env/hum", payloadString: (65 + (Math.random() * 5)).toFixed(1) });
+            onMessageArrived({ isMock: true, destinationName: "yareugae_proj/home/safety/gas_level", payloadString: Math.floor(300 + Math.random() * 50).toString() });
+            onMessageArrived({ isMock: true, destinationName: "yareugae_proj/field/moisture/level", payloadString: Math.floor(500 + Math.random() * 150).toString() });
+
+            if (Math.random() > 0.85) onMessageArrived({ isMock: true, destinationName: "yareugae_proj/home/security/entry", payloadString: "Guest Detected!" });
+            if (Math.random() > 0.90) onMessageArrived({ isMock: true, destinationName: "yareugae_proj/home/env/rain", payloadString: "Rain Detected!" });
+        }
+
+        // ==========================================
+        // MQTT WEBSOCKET CONNECTION
+        // ==========================================
+        const clientId = "WebClient-" + Math.random().toString(16).substr(2, 8);
+        const host = "broker.hivemq.com";
+        const port = 8884;
+
+        let client;
+
+        function initMQTT() {
+            if (typeof Paho === 'undefined' || typeof Paho.MQTT === 'undefined') {
+                console.error("MQTT Library failed to load. Retrying in 2 seconds...");
+                setTimeout(initMQTT, 2000);
+                return;
+            }
+
+            client = new Paho.MQTT.Client(host, port, clientId);
+            client.onConnectionLost = onConnectionLost;
+            client.onMessageArrived = onMessageArrived;
+            connectMQTT();
+        }
+
+        const options = {
+            useSSL: true,
+            timeout: 3,
+            onSuccess: onConnect,
+            onFailure: function (message) {
+                document.getElementById('conn-status').innerHTML = '<i class="fas fa-times-circle" style="color:#ff4d4d"></i> Failed';
+                setTimeout(connectMQTT, 5000);
+            }
+        };
+
+        function connectMQTT() {
+            document.getElementById('conn-status').innerHTML = '<i class="fas fa-spinner fa-spin" style="color:#ffb74d"></i> Connecting...';
+            client.connect(options);
+        }
+
+        function onConnect() {
+            document.getElementById('conn-status').innerHTML = '<i class="fas fa-check-circle" style="color:#00e676"></i> Connected';
+
+            client.subscribe("yareugae_proj/home/security/entry");
+            client.subscribe("yareugae_proj/home/env/rain");
+            client.subscribe("yareugae_proj/home/safety/gas_level");
+            client.subscribe("yareugae_proj/home/env/temp");
+            client.subscribe("yareugae_proj/home/env/hum");
+
+            client.subscribe("yareugae_proj/field/moisture/level");
+            client.subscribe("yareugae_proj/field/status/flood");
+        }
+
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                document.getElementById('conn-status').innerHTML = '<i class="fas fa-triangle-exclamation" style="color:#ff4d4d"></i> Reconnecting...';
+                setTimeout(connectMQTT, 5000);
+            }
+        }
+
+        function onMessageArrived(message) {
+            if (!message.isMock && mockDataTimer) {
+                clearInterval(mockDataTimer);
+                mockDataTimer = null;
+            }
+
+            const topic = message.destinationName;
+            const payload = message.payloadString;
+
+            if (topic === "yareugae_proj/home/env/temp") {
+                addData(climateChart, 0, parseFloat(payload));
+            }
+            else if (topic === "yareugae_proj/home/env/hum") {
+                addData(climateChart, 1, parseFloat(payload));
+            }
+            else if (topic === "yareugae_proj/home/safety/gas_level") {
+                document.getElementById('ui-gas-level').innerText = payload;
+                updateFanLogic(payload);
+            }
+            else if (topic === "yareugae_proj/home/security/entry") {
+                addLogEntry(payload);
+            }
+            else if (topic === "yareugae_proj/home/env/rain") {
+                const icon = document.getElementById('ui-rain-icon');
+                icon.classList.add('glow-blue');
+                setTimeout(() => icon.classList.remove('glow-blue'), 5000);
+            }
+
+            else if (topic === "yareugae_proj/field/moisture/level") {
+                document.getElementById('ui-moisture-level').innerText = payload;
+                addData(moistureChart, 0, parseInt(payload));
+                updatePumpLogic(payload);
+            }
+            else if (topic === "yareugae_proj/field/status/flood") {
+                const icon = document.getElementById('ui-flood-icon');
+                const text = document.getElementById('ui-flood-alert');
+                if (payload.includes("WARNING")) {
+                    icon.classList.add('glow-blue');
+                    text.innerHTML = `<span class="glow-blue">${payload}</span>`;
+                } else {
+                    icon.classList.remove('glow-blue');
+                    icon.style.color = "#555";
+                    text.innerHTML = "<span style='color: var(--text-muted)'>Status: Normal</span>";
+                }
+            }
+        }
+
+        window.addEventListener('load', initMQTT);
+    </script>
+</body>
+
+</html>
